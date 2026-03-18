@@ -16,7 +16,7 @@
             max-width: 420px; margin: 0 auto;
         }
         .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-        #status { font-size: 16px; font-weight: 600; color: #ff3b30; } 
+        #status { font-size: 16px; font-weight: 600; color: #ff3b30; }
         .conn-btn {
             background: #007aff; color: white; border: none;
             padding: 8px 16px; border-radius: 12px; font-weight: 600; cursor: pointer;
@@ -29,20 +29,22 @@
             display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
         }
         .addr-label { font-size: 13px; color: #8e8e93; flex: 1; min-width: 80px; }
-        select { 
-            background: #2c2c2e; color: white; border: none; 
-            padding: 8px 12px; border-radius: 8px;
-            flex: 1; max-width: 220px;
-        }
-        .custom-addr {
+        select, input[type="number"] {
             background: #2c2c2e; color: white; border: none;
             padding: 8px 12px; border-radius: 8px;
-            width: 90px; text-align: center;
             font-size: 15px;
         }
-        .custom-addr::placeholder { color: #666; }
-        .set-btn { background: #333; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600; }
-
+        select { flex: 1; max-width: 220px; }
+        #customAddr {
+            width: 90px; text-align: center;
+            display: none; /* 처음엔 숨김 */
+        }
+        #customAddr::placeholder { color: #666; }
+        .set-btn { 
+            background: #333; color: white; border: none; 
+            padding: 8px 16px; border-radius: 8px; cursor: pointer; 
+            font-weight: 600; width: 100%; margin-top: 8px;
+        }
         #gauge-container { position: relative; width: 320px; height: 320px; margin: 0 auto 16px; }
         #target-rpm {
             position: absolute; top: 77.5%; left: 50%; transform: translate(-50%, -50%);
@@ -54,18 +56,16 @@
             padding: 12px; border-radius: 10px; font-weight: 600; cursor: pointer;
         }
         .baud-btn.active { background: #007aff; color: white; }
-
         .control-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .ctrl-btn { padding: 18px; border: none; border-radius: 12px; font-size: 17px; font-weight: 700; color: white; cursor: pointer; }
         #resume { background: #34c759; }
-        #up     { background: #007aff; }
-        #stop   { background: #ff3b30; }
-        #down   { background: #ff9500; }
+        #up { background: #007aff; }
+        #stop { background: #ff3b30; }
+        #down { background: #ff9500; }
         button:active { opacity: 0.8; transform: scale(0.95); }
     </style>
 </head>
 <body>
-
 <div class="container">
     <div class="top-bar">
         <div id="status">Disconnected</div>
@@ -75,28 +75,24 @@
     <div class="addr-bar">
         <div class="addr-row">
             <span class="addr-label">ENGINE SA</span>
-            
-            <select id="sourceAddrSelect">
-                <optgroup label="Popular">
-                    <option value="229">Mack (0xE5) - Default</option>
-                    <option value="242">Cummins (0xF2)</option>
-                    <option value="231">Detroit (0xE7)</option>
-                </optgroup>
-                <optgroup label="Other Manufacturers">
+            <select id="sourceAddrSelect" onchange="toggleCustomInput()">
+                <option value="229" selected>Mack (0xE5) - Default</option>
+                <option value="242">Cummins (0xF2)</option>
+                <option value="231">Detroit (0xE7)</option>
+                <optgroup label="기타 제조사">
                     <option value="3">Detroit/PACCAR/Intl (0x03)</option>
                     <option value="7">Cummins/PACCAR (0x07)</option>
                     <option value="11">Volvo/PACCAR (0x0B)</option>
                     <option value="33">Body Controller (0x21)</option>
                     <option value="39">Volvo Custom (0x27)</option>
                 </optgroup>
+                <option value="custom">직접 입력 (0~255)</option>
             </select>
-
-            <input type="number" id="customAddr" class="custom-addr" 
-                   min="0" max="255" placeholder="직접 입력" 
+            <input type="number" id="customAddr" class="custom-addr"
+                   min="0" max="255" placeholder="0~255"
                    inputmode="numeric" pattern="[0-9]*">
         </div>
-
-        <button class="set-btn" onclick="setAddress()">SET</button>
+        <button class="set-btn" onclick="setAddress()">SET ADDRESS</button>
     </div>
 
     <div id="gauge-container">
@@ -111,16 +107,16 @@
 
     <div class="control-grid">
         <button id="resume" class="ctrl-btn" onclick="sendCommand(1000)">RESUME</button>
-        <button id="up"     class="ctrl-btn" onclick="sendCommand(1)">UP</button>
-        <button id="stop"   class="ctrl-btn" onclick="sendCommand(600)">STOP</button>
-        <button id="down"   class="ctrl-btn" onclick="sendCommand(2)">DOWN</button>
+        <button id="up" class="ctrl-btn" onclick="sendCommand(1)">UP</button>
+        <button id="stop" class="ctrl-btn" onclick="sendCommand(600)">STOP</button>
+        <button id="down" class="ctrl-btn" onclick="sendCommand(2)">DOWN</button>
     </div>
 </div>
 
 <script>
     let bleDevice, bleChar;
     const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-    const CHAR_UUID    = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+    const CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
     const gauge = new RadialGauge({
         renderTo: 'gauge-rpm',
@@ -139,6 +135,19 @@
                 { from: 2500, to: 3000, color: "rgba(255,59,48,0.7)" }
             ]
         });
+    }
+
+    // 직접 입력 필드 보이기/숨기기
+    function toggleCustomInput() {
+        const select = document.getElementById('sourceAddrSelect');
+        const customInput = document.getElementById('customAddr');
+        if (select.value === "custom") {
+            customInput.style.display = "block";
+            customInput.focus();
+        } else {
+            customInput.style.display = "none";
+            customInput.value = "";
+        }
     }
 
     async function toggleConnect() {
@@ -177,15 +186,12 @@
     function handleNotify(event) {
         const dv = event.target.value;
         if (dv.byteLength < 5) return;
-
         const current = dv.getUint16(0, true);
-        const target  = dv.getUint16(2, true);
-        const is500   = dv.getUint8(4) === 1;
-
+        const target = dv.getUint16(2, true);
+        const is500 = dv.getUint8(4) === 1;
         gauge.value = current;
         document.getElementById('target-rpm').innerText = target;
         updateArc(target);
-
         document.getElementById('baud250').classList.toggle('active', !is500);
         document.getElementById('baud500').classList.toggle('active', is500);
     }
@@ -201,27 +207,27 @@
     }
 
     function setAddress() {
+        const select = document.getElementById('sourceAddrSelect');
         const customInput = document.getElementById('customAddr').value.trim();
         let addr;
 
-        // 1. 직접 입력값이 있으면 우선 사용
-        if (customInput !== "") {
+        if (select.value === "custom" && customInput !== "") {
             addr = parseInt(customInput);
             if (isNaN(addr) || addr < 0 || addr > 255) {
                 alert("0 ~ 255 사이의 숫자를 입력해주세요.");
                 return;
             }
-        } 
-        // 2. 입력이 없으면 select 값 사용
-        else {
-            addr = parseInt(document.getElementById('sourceAddrSelect').value);
+        } else {
+            addr = parseInt(select.value);
         }
 
         sendCommand(0xA500 | addr);
-        
-        // 입력 후 필드 초기화 (선택사항)
-        // document.getElementById('customAddr').value = "";
     }
+
+    // 페이지 로드시 기본 상태 설정
+    window.addEventListener('load', () => {
+        toggleCustomInput(); // 초기 상태에서 직접 입력 숨김
+    });
 </script>
 </body>
 </html>

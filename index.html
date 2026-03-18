@@ -3,348 +3,185 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>J1939 Dashboard</title>
+    <title>J1939 RPM Control</title>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-gauges@2.1.7/gauge.min.js"></script>
     <style>
-        /* [지시사항 반영] 디자인 보존 원칙 준수 */
         body {
-            background-color: #121212;
-            color: white;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+            margin: 0; padding: 0; background: #000; color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            height: 100vh; overflow: hidden; display: flex; flex-direction: column;
         }
+        .container {
+            flex: 1; padding: 10px; display: flex; flex-direction: column;
+            max-width: 420px; margin: 0 auto;
+        }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        #status { font-size: 16px; font-weight: 600; color: #ff3b30; } 
+        .conn-btn {
+            background: #007aff; color: white; border: none;
+            padding: 8px 16px; border-radius: 12px; font-weight: 600; cursor: pointer;
+        }
+        .addr-bar {
+            background: #1c1c1e; border-radius: 12px; padding: 10px;
+            display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+        }
+        .addr-label { font-size: 13px; color: #8e8e93; flex: 1; }
+        select { background: #2c2c2e; color: white; border: none; padding: 8px 12px; border-radius: 8px; }
+        .set-btn { background: #333; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
 
-        /* 1. 상단 상태 및 연결 */
-        .header {
-            width: 100%;
-            max-width: 450px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-        #status { color: #f44336; font-weight: bold; font-size: 14px; }
-        #status.connected { color: #4caf50; }
-        .btn-connect {
-            background: #333;
-            color: white;
-            border: 1px solid #444;
-            padding: 8px 16px;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-
-        /* 2. Source Address 설정 (직접 입력 박스를 위해 position relative 추가) */
-        .config-box {
-            width: 100%;
-            max-width: 450px;
-            background: #1e1e1e;
-            padding: 10px;
-            border-radius: 10px;
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            box-sizing: border-box;
-            position: relative; /* 직접 입력 박스 위치 기준 */
-        }
-        select, .btn-set {
-            background: #2d2d2d;
-            border: 1px solid #444;
-            color: white;
-            padding: 10px;
-            border-radius: 5px;
-            flex: 1;
-        }
-        .btn-set { flex: 0.3; background: #444; cursor: pointer; }
-
-        /* [지시사항 반영] 직접 입력 박스 스타일 (UI 보존을 위해 Absolute Positioning 사용) */
-        #customAddr_Box {
-            display: none; /* 기본 숨김 */
-            position: absolute;
-            top: calc(100% + 5px); /* 드롭다운 바로 아래 */
-            left: 10px;
-            right: 10px;
-            background: #1e1e1e;
-            padding: 10px;
-            border-radius: 5px;
-            border: 1px solid #444;
-            align-items: center;
-            gap: 8px;
-            z-index: 20; /* 게이지 위에 오도록 설정 */
-            box-shadow: 0 4px 10px rgba(0,0,0,0.5); /* 이질감 줄이는 쉐도우 */
-            box-sizing: border-box;
-        }
+        #gauge-container { position: relative; width: 320px; height: 320px; margin: 0 auto 16px; }
         
-        #customAddr_Input {
-            background: #2c2c2e;
-            color: white;
-            border: 1px solid #444;
-            padding: 10px;
-            border-radius: 5px;
-            flex: 1;
-            font-size: 14px;
-            box-sizing: border-box;
-            width: calc(100% - 70px); /* 입력 버튼 너비 제외 */
+        /* [지시사항] Target RPM: 크기 70%, 위치 하단 이동 */
+        #target-rpm {
+            position: absolute; top: 78%; left: 50%; transform: translate(-50%, -50%);
+            font-size: 29.4px; font-weight: 700; color: #fff; pointer-events: none;
+            z-index: 10;
         }
-
-        /* 3, 4, 5. 게이지 및 숫자 표시 (중앙 정렬) */
-        .gauge-area {
-            position: relative;
-            width: 320px;
-            height: 320px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-        .gauge-svg {
-            width: 100%;
-            height: 100%;
-            transform: rotate(-90deg);
-        }
-        .bg-circle { fill: none; stroke: #2d2d2d; stroke-width: 15; }
-        .target-arc {
-            fill: none;
-            stroke: #2196f3;
-            stroke-width: 15;
-            stroke-linecap: round;
-            stroke-dasharray: 0 1000;
-            transition: stroke-dasharray 0.3s ease;
-        }
-        .needle-line {
-            position: absolute;
-            width: 2px;
-            height: 140px;
-            background: white;
-            bottom: 50%;
-            transform-origin: bottom center;
-            transform: rotate(0deg);
-            transition: transform 0.2s ease-out;
-        }
-        .rpm-info {
-            position: absolute;
-            text-align: center;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-        .current-val { font-size: 72px; font-weight: bold; line-height: 1; }
-        .target-val { font-size: 20px; color: #2196f3; margin-top: 5px; }
-
-        /* 6. Baud Rate 선택 */
-        .baud-area {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 25px;
-        }
+        .baud-bar { display: flex; gap: 10px; margin: 12px 0; }
         .baud-btn {
-            background: #1e1e1e;
-            border: 1px solid #333;
-            color: #666;
-            padding: 10px 30px;
-            border-radius: 5px;
-            cursor: pointer;
+            flex: 1; background: #1c1c1e; color: #8e8e93; border: none;
+            padding: 12px; border-radius: 10px; font-weight: 600; cursor: pointer;
         }
-        .baud-btn.active { border-color: #2196f3; color: #2196f3; }
+        .baud-btn.active { background: #007aff; color: white; }
 
-        /* 7. 제어 버튼 그리드 */
-        .btn-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            width: 100%;
-            max-width: 450px;
-        }
-        .ctrl-btn {
-            border: none;
-            border-radius: 12px;
-            padding: 25px 0;
-            font-size: 22px;
-            font-weight: bold;
-            color: white;
-            cursor: pointer;
-            text-transform: uppercase;
-        }
-        .resume { background: #4caf50; }
-        .up { background: #2196f3; }
-        .stop { background: #f44336; }
-        .down { background: #ff9800; }
-
-        .footer { margin-top: 30px; color: #444; font-size: 12px; }
+        .control-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .ctrl-btn { padding: 18px; border: none; border-radius: 12px; font-size: 17px; font-weight: 700; color: white; cursor: pointer; }
+        #resume { background: #34c759; }
+        #up     { background: #007aff; }
+        #stop   { background: #ff3b30; }
+        #down   { background: #ff9500; }
+        button:active { opacity: 0.8; transform: scale(0.95); }
     </style>
 </head>
 <body>
 
-    <div class="header">
-        <div id="status">DISCONNECTED</div>
-        <button class="btn-connect" id="connectBtn">CONNECT</button>
+<div class="container">
+    <div class="top-bar">
+        <div id="status">Disconnected</div>
+        <button class="conn-btn" id="mainBtn" onclick="toggleConnect()">CONNECT</button>
     </div>
 
-    <div class="config-box">
-        <select id="saSelect">
-            <option value="229">Source Address: 0xE5</option>
-            <option value="128">Source Address: 0x80</option>
-            <option value="custom">직접 입력...</option>
+    <div class="addr-bar">
+        <span class="addr-label">ENGINE SA</span>
+        <select id="sourceAddr">
+            <optgroup label="Manufacturers">
+                <option value="229">Mack (0xE5)</option>
+                <option value="242">Cummins (0xF2)</option>
+                <option value="231">Detroit (0xE7)</option>
+                <option value="3">PACCAR/Intl (0x03)</option>
+                <option value="11">Volvo (0x0B)</option>
+                <option value="custom">직접 입력...</option>
+            </optgroup>
         </select>
-        <button class="btn-set" onclick="setSA()">SET</button>
-
-        <div id="customAddr_Box">
-            <input type="text" id="customAddr_Input" placeholder="예: 0xE6 또는 230">
-            <button class="btn-set" style="flex:0.3; background:#444;" onclick="setCustomSA()">확인</button>
-        </div>
+        <button class="set-btn" onclick="handleSA()">SET</button>
     </div>
 
-    <div class="gauge-area">
-        <svg class="gauge-svg" viewBox="0 0 100 100">
-            <circle class="bg-circle" cx="50" cy="50" r="42" />
-            <circle id="targetArc" class="target-arc" cx="50" cy="50" r="42" pathLength="1000" />
-        </svg>
-        <div id="needle" class="needle-line"></div>
-        <div class="rpm-info">
-            <div class="current-val" id="curRpmDisp">0</div>
-            <div class="target-val" id="tarRpmDisp">Target: 0</div>
-        </div>
+    <div id="gauge-container">
+        <canvas id="gauge-rpm"></canvas>
+        <div id="target-rpm">0</div>
     </div>
 
-    <div class="baud-area">
-        <button class="baud-btn active" id="b250" onclick="setBaud(250)">250</button>
-        <button class="baud-btn" id="b500" onclick="setBaud(500)">500</button>
+    <div class="baud-bar">
+        <button id="baud250" class="baud-btn active" onclick="changeBaud(250)">250 kbps</button>
+        <button id="baud500" class="baud-btn" onclick="changeBaud(500)">500 kbps</button>
     </div>
 
-    <div class="btn-grid">
-        <button class="ctrl-btn resume" onclick="sendCmd(1)">RESUME</button>
-        <button class="ctrl-btn up" onclick="sendCmd(2)">UP</button>
-        <button class="ctrl-btn stop" onclick="sendCmd(3)">STOP</button>
-        <button class="ctrl-btn down" onclick="sendCmd(4)">DOWN</button>
+    <div class="control-grid">
+        <button id="resume" class="ctrl-btn" onclick="sendCommand(1000)">RESUME</button>
+        <button id="up"     class="ctrl-btn" onclick="sendCommand(1)">UP</button>
+        <button id="stop"   class="ctrl-btn" onclick="sendCommand(600)">STOP</button>
+        <button id="down"   class="ctrl-btn" onclick="sendCommand(2)">DOWN</button>
     </div>
+</div>
 
-    <div class="footer">charlesbang707.github.io</div>
+<script>
+    let bleDevice, bleChar;
+    const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+    const CHAR_UUID    = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
-    <script>
-        let device, characteristic;
-        const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-        const CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+    // 원래 Grok 디자인 복구
+    const gauge = new RadialGauge({
+        renderTo: 'gauge-rpm',
+        width: 320, height: 320, minValue: 0, maxValue: 3000,
+        majorTicks: ["0","500","1000","1500","2000","2500","3000"],
+        highlights: [{ from: 2500, to: 3000, color: "rgba(255,59,48,0.7)" }],
+        colorPlate: "#000", colorMajorTicks: "#ddd", colorNumbers: "#ccc",
+        needleType: "arrow", needleWidth: 4, needleColor: "#ff69b4",
+        valueBox: false, borderShadowWidth: 0, animationDuration: 200
+    }).draw();
 
-        async function toggleConnect() {
-            if (device && device.gatt.connected) {
-                await device.gatt.disconnect();
-                return;
-            }
-            try {
-                device = await navigator.bluetooth.requestDevice({
-                    filters: [{ name: "Truck_RPM_Control" }],
-                    optionalServices: [SERVICE_UUID]
-                });
-                device.addEventListener('gattserverdisconnected', onDisconnected);
-                const server = await device.gatt.connect();
-                const service = await server.getPrimaryService(SERVICE_UUID);
-                characteristic = await service.getCharacteristic(CHAR_UUID);
-                
-                document.getElementById('status').innerText = "CONNECTED";
-                document.getElementById('status').classList.add('connected');
-                document.getElementById('connectBtn').innerText = "DISCONNECT";
-                
-                await characteristic.startNotifications();
-                characteristic.addEventListener('characteristicvaluechanged', updateUI);
-            } catch (e) { console.log(e); }
-        }
-
-        function onDisconnected() {
-            document.getElementById('status').innerText = "DISCONNECTED";
-            document.getElementById('status').classList.remove('connected');
-            document.getElementById('connectBtn').innerText = "CONNECT";
-        }
-
-        function updateUI(event) {
-            const data = event.target.value;
-            const cur = data.getUint16(0, true);
-            const tar = data.getUint16(2, true);
-
-            // 숫자 및 게이지 업데이트
-            document.getElementById('curRpmDisp').innerText = cur;
-            document.getElementById('tarRpmDisp').innerText = `Target: ${tar}`;
-            
-            // 바늘 회전 (0~3000 RPM 기준 -135도 ~ 135도)
-            const angle = (cur / 3000) * 270 - 135;
-            document.getElementById('needle').style.transform = `rotate(${angle}deg)`;
-
-            // 타겟 Arc (pathLength 1000 기준)
-            const arcSize = (tar / 3000) * 1000;
-            document.getElementById('targetArc').style.strokeDasharray = `${arcSize} 1000`;
-        }
-
-        async function sendCmd(val) {
-            if (characteristic) {
-                // Grok의 1바이트 전송 규격 유지
-                await characteristic.writeValue(new Uint8Array([val]));
-            }
-        }
-
-        function setBaud(rate) {
-            document.getElementById('b250').classList.toggle('active', rate === 250);
-            document.getElementById('b500').classList.toggle('active', rate === 500);
-            sendCmd(rate === 250 ? 5 : 6);
-        }
-
-        // [지시사항 반영] Grok의 기존 setSA 로직 수정
-        function setSA() {
-            const sa = document.getElementById('saSelect').value;
-            
-            // 직접 입력 모드가 아니면 기존 방식으로 1바이트 명령 전송
-            if (sa !== 'custom') {
-                sendCmd(parseInt(sa));
-            }
-            // 'custom' 선택 시 이벤트 리스너가 입력 박스를 표시하므로 별도 로직 없음
-        }
-
-        // [지시사항 반영] 직접 입력 관련 이벤트 리스너 추가
-        document.getElementById('saSelect').addEventListener('change', function() {
-            if (this.value === 'custom') {
-                document.getElementById('customAddr_Box').style.display = 'flex'; // 입력 박스 표시
-                document.getElementById('customAddr_Input').focus(); // 입력 필드에 포커스
-            } else {
-                document.getElementById('customAddr_Box').style.display = 'none'; // 입력 박스 숨김
-            }
+    function updateArc(target) {
+        gauge.update({
+            highlights: [
+                { from: 0, to: target, color: "rgba(0,122,255,0.6)" },
+                { from: 2500, to: 3000, color: "rgba(255,59,48,0.7)" }
+            ]
         });
+    }
 
-        // [지시사항 반영] 직접 입력 처리 함수 추가
-        async function setCustomSA() {
-            if (!characteristic) return alert("먼저 연결해주세요.");
-            let input = document.getElementById('customAddr_Input').value.trim();
+    async function toggleConnect() {
+        if (bleDevice && bleDevice.gatt.connected) {
+            await bleDevice.gatt.disconnect(); return;
+        }
+        try {
+            bleDevice = await navigator.bluetooth.requestDevice({
+                filters: [{ name: "Truck_RPM_Control" }], optionalServices: [SERVICE_UUID]
+            });
+            const server = await bleDevice.gatt.connect();
+            const service = await server.getPrimaryService(SERVICE_UUID);
+            bleChar = await service.getCharacteristic(CHAR_UUID);
+            await bleChar.startNotifications();
+            bleChar.addEventListener('characteristicvaluechanged', handleNotify);
+            updateStatus(true);
+        } catch (err) { console.error(err); }
+    }
+
+    function updateStatus(c) {
+        const s = document.getElementById('status');
+        const b = document.getElementById('mainBtn');
+        s.innerText = c ? "Connected" : "Disconnected";
+        s.style.color = c ? "#34c759" : "#ff3b30";
+        b.innerText = c ? "DISCONNECT" : "CONNECT";
+    }
+
+    function handleNotify(e) {
+        const dv = e.target.value;
+        if (dv.byteLength < 5) return;
+        const cur = dv.getUint16(0, true);
+        const tar = dv.getUint16(2, true);
+        const is500 = dv.getUint8(4) === 1;
+        gauge.value = cur;
+        document.getElementById('target-rpm').innerText = tar;
+        updateArc(tar);
+        document.getElementById('baud250').classList.toggle('active', !is500);
+        document.getElementById('baud500').classList.toggle('active', is500);
+    }
+
+    async function sendCommand(val) {
+        if (!bleChar) return;
+        const buf = new Uint8Array([val & 0xFF, (val >> 8) & 0xFF]);
+        await bleChar.writeValue(buf);
+    }
+
+    function changeBaud(kbps) { sendCommand(kbps === 500 ? 0x5000 : 0x2500); }
+
+    // [지시사항] UI 보존을 위한 직접 입력 처리
+    function handleSA() {
+        const sel = document.getElementById('sourceAddr');
+        let addr;
+        if (sel.value === 'custom') {
+            const input = prompt("Source Address를 입력하세요 (0-255 또는 0x00-0xFF):");
             if (!input) return;
-
-            let addr;
-            if (input.startsWith('0x') || input.startsWith('0X')) {
-                // 16진수 처리
-                addr = parseInt(input.slice(2), 16);
-            } else if (/^\d+$/.test(input)) {
-                // 10진수 처리
-                addr = parseInt(input, 10);
-            } else {
-                // 유효하지 않은 입력
-                alert('유효하지 않은 입력입니다. (예: 0xE6 또는 230)');
-                return;
-            }
-
-            // 0~255 범위 확인 (J1939 SA는 1바이트)
-            if (isNaN(addr) || addr < 0 || addr > 255) {
-                alert('Source Address는 0에서 255 사이여야 합니다.');
-                return;
-            }
-
-            // [지시사항 반영] Grok의 1바이트 전송 규격을 준수하여 직접 입력한 값을 전송
-            await characteristic.writeValue(new Uint8Array([addr]));
-
-            // 입력 박스 초기화 및 숨김, 드롭다운 기본값으로 복귀
-            document.getElementById('customAddr_Input').value = '';
-            document.getElementById('customAddr_Box').style.display = 'none';
-            document.getElementById('saSelect').value = '229'; // 기본값 (Mack)으로 되돌림
+            addr = input.startsWith('0x') ? parseInt(input, 16) : parseInt(input, 10);
+        } else {
+            addr = parseInt(sel.value);
         }
 
-        document.getElementById('connectBtn').onclick = toggleConnect;
-    </script>
+        if (isNaN(addr) || addr < 0 || addr > 255) {
+            alert("유효한 Address가 아닙니다."); return;
+        }
+        sendCommand(0xA500 | addr);
+    }
+</script>
 </body>
 </html>
